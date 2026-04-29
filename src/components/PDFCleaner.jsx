@@ -6,11 +6,13 @@ import styles from './PDFCleaner.module.css';
 export default function PDFCleaner({ addToast, removeToast }) {
   const [files, setFiles] = useState([]); // Array of { file, path, name, status, text, pages }
   const [rules, setRules] = useState({
-    mode: 'remove',
+    action: 'remove', // 'remove' | 'replace'
+    searchMode: 'string', // 'string' | 'word' | 'regex'
     findText: '',
     replaceText: '',
-    useRegex: false,
     caseInsensitive: true,
+    wholeWord: false,
+    useRegex: false,
     scope: 'all', 
     pageRange: '',
   });
@@ -154,16 +156,15 @@ export default function PDFCleaner({ addToast, removeToast }) {
   const handleApply = async () => {
     if (files.length === 0 || !rules.findText || scanStatus.count === 0) return;
     
-    const confirmCleanup = window.confirm(`Syme will mask ${scanStatus.count} instances of "${rules.findText}" across ${files.length} file(s). This action creates new files and cannot be undone. Continue?`);
+    const confirmCleanup = window.confirm(`Syme will ${rules.action === 'remove' ? 'mask' : 'replace'} ${scanStatus.count} instances of "${rules.findText}" across ${files.length} file(s). This action creates new files and cannot be undone. Continue?`);
     if (!confirmCleanup) return;
 
     setIsProcessing(true);
-    const toastId = addToast(`Cleaning ${files.length} PDF(s)...`, 'loading', 0);
+    const toastId = addToast(`${rules.action === 'remove' ? 'Cleaning' : 'Replacing'} ${files.length} PDF(s)...`, 'loading', 0);
 
     try {
       let successCount = 0;
       for (const f of files) {
-        // Pass occurrences to the backend so it knows exactly where to "clean"
         const result = await window.electronAPI.processPDF(f.path, { 
           ...rules, 
           occurrences: f.occurrences 
@@ -171,7 +172,7 @@ export default function PDFCleaner({ addToast, removeToast }) {
         if (result.success) successCount++;
       }
       removeToast(toastId);
-      addToast(`Successfully cleaned ${successCount} PDF(s).`, 'success');
+      addToast(`Successfully processed ${successCount} PDF(s).`, 'success');
     } catch (e) {
       removeToast(toastId);
       addToast(`Error processing PDFs: ${e.message}`, 'error');
@@ -232,34 +233,90 @@ export default function PDFCleaner({ addToast, removeToast }) {
           <div className={styles.section}>
             <h3 className={styles.sectionTitle}>Cleanup Rules</h3>
             <div className={styles.ruleBox}>
-              {/* ... existing modeTabs ... */}
               <div className={styles.modeTabs}>
                 <button 
-                  className={rules.mode === 'remove' ? styles.modeTabActive : styles.modeTab}
-                  onClick={() => setRules(r => ({ ...r, mode: 'remove' }))}
+                  className={rules.action === 'remove' ? styles.modeTabActive : styles.modeTab}
+                  onClick={() => setRules(r => ({ ...r, action: 'remove' }))}
                 >
                   <Trash2 size={13} /> Remove
                 </button>
                 <button 
-                  className={rules.mode === 'replace' ? styles.modeTabActive : styles.modeTab}
-                  onClick={() => setRules(r => ({ ...r, mode: 'replace' }))}
+                  className={rules.action === 'replace' ? styles.modeTabActive : styles.modeTab}
+                  onClick={() => setRules(r => ({ ...r, action: 'replace' }))}
                 >
                   <Scissors size={13} /> Replace
                 </button>
               </div>
 
+              <div className={styles.searchModes}>
+                <button 
+                  className={rules.searchMode === 'string' ? styles.searchModeActive : styles.searchMode}
+                  onClick={() => setRules(r => ({ ...r, searchMode: 'string' }))}
+                >
+                  String
+                </button>
+                <button 
+                  className={rules.searchMode === 'word' ? styles.searchModeActive : styles.searchMode}
+                  onClick={() => setRules(r => ({ ...r, searchMode: 'word' }))}
+                >
+                  Word
+                </button>
+                <button 
+                  className={rules.searchMode === 'regex' ? styles.searchModeActive : styles.searchMode}
+                  onClick={() => setRules(r => ({ ...r, searchMode: 'regex' }))}
+                >
+                  Regex
+                </button>
+              </div>
+
               <div className={styles.fieldGroup}>
-                <label className={styles.fieldLabel}>{rules.mode === 'remove' ? 'Text to Remove' : 'Find Text'}</label>
+                <label className={styles.fieldLabel}>{rules.action === 'remove' ? 'Text to Remove' : 'Find Text'}</label>
                 <div className={styles.inputWrapper}>
                   <Search size={14} className={styles.searchIcon} />
                   <input 
                     className={styles.input}
-                    placeholder="Search pattern..."
+                    placeholder={rules.searchMode === 'regex' ? "Enter regex pattern..." : "Search pattern..."}
                     value={rules.findText}
                     onChange={e => setRules(r => ({ ...r, findText: e.target.value }))}
                   />
                   {scanStatus.scanning && <Loader2 size={12} className={`${styles.spinner} ${styles.inputLoader}`} />}
                 </div>
+              </div>
+
+              {rules.action === 'replace' && (
+                <div className={styles.fieldGroup}>
+                  <label className={styles.fieldLabel}>Replace With</label>
+                  <div className={styles.inputWrapper}>
+                    <Plus size={14} className={styles.searchIcon} />
+                    <input 
+                      className={styles.input}
+                      placeholder="Replacement text..."
+                      value={rules.replaceText}
+                      onChange={e => setRules(r => ({ ...r, replaceText: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className={styles.checkboxGroup}>
+                <label className={styles.checkboxItem}>
+                  <input 
+                    type="checkbox" 
+                    checked={rules.caseInsensitive}
+                    onChange={e => setRules(r => ({ ...r, caseInsensitive: e.target.checked }))}
+                  />
+                  <span>Ignore Case</span>
+                </label>
+                {rules.searchMode === 'string' && (
+                  <label className={styles.checkboxItem}>
+                    <input 
+                      type="checkbox" 
+                      checked={rules.wholeWord}
+                      onChange={e => setRules(r => ({ ...r, wholeWord: e.target.checked }))}
+                    />
+                    <span>Whole Word</span>
+                  </label>
+                )}
               </div>
 
               {rules.findText.length > 2 && !scanStatus.scanning && (
@@ -268,30 +325,6 @@ export default function PDFCleaner({ addToast, removeToast }) {
                   Found {scanStatus.count} instances across {files.length} files.
                 </div>
               )}
-              {/* ... existing replace fields ... */}
-              {rules.mode === 'replace' && (
-                <div className={styles.fieldGroup}>
-                  <label className={styles.fieldLabel}>Replace With</label>
-                  <input 
-                    className={styles.input}
-                    placeholder="Replacement text"
-                    value={rules.replaceText}
-                    onChange={e => setRules(r => ({ ...r, replaceText: e.target.value }))}
-                  />
-                </div>
-              )}
-
-              <div className={styles.checkRow}>
-                <label className={styles.check}>
-                  <input type="checkbox" checked={rules.useRegex} onChange={e => setRules(r => ({ ...r, useRegex: e.target.checked }))} />
-                  Regex
-                </label>
-                <label className={styles.check}>
-                  <input type="checkbox" checked={rules.caseInsensitive} onChange={e => setRules(r => ({ ...r, caseInsensitive: e.target.checked }))} />
-                  Ignore Case
-                </label>
-              </div>
-              {/* ... existing divider/scope ... */}
               <div className={styles.divider} />
 
               <div className={styles.fieldGroup}>
@@ -325,8 +358,8 @@ export default function PDFCleaner({ addToast, removeToast }) {
             disabled={files.length === 0 || !rules.findText || isProcessing || scanStatus.count === 0}
             onClick={handleApply}
           >
-            {isProcessing ? <Loader2 className={styles.spinner} size={16} /> : <Trash2 size={16} />}
-            {isProcessing ? 'Cleaning...' : `Remove ${scanStatus.count > 0 ? scanStatus.count : ''} Occurrences`}
+            {isProcessing ? <Loader2 className={styles.spinner} size={16} /> : (rules.action === 'remove' ? <Trash2 size={16} /> : <Scissors size={16} />)}
+            {isProcessing ? (rules.action === 'remove' ? 'Cleaning...' : 'Replacing...') : `${rules.action === 'remove' ? 'Remove' : 'Replace'} ${scanStatus.count > 0 ? scanStatus.count : ''} Occurrences`}
           </button>
         </div>
 

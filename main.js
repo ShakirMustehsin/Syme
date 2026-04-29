@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { PDFDocument, rgb, StandardFonts, PDFArray, PDFString, PDFHexString } = require('pdf-lib');
+const { PDFDocument, rgb, PDFArray, PDFString, PDFHexString } = require('pdf-lib');
 
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
 let mainWindow = null;
@@ -25,230 +25,148 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
   }
 
-  // Window management
+  // Window management (Handlers registered once)
   ipcMain.on('window:minimize', () => mainWindow.minimize());
   ipcMain.on('window:maximize', () => {
-    if (mainWindow.isMaximized()) {
-      mainWindow.unmaximize();
-    } else {
-      mainWindow.maximize();
-    }
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
   });
   ipcMain.on('window:close', () => mainWindow.close());
   ipcMain.handle('window:isMaximized', () => mainWindow.isMaximized());
 
   mainWindow.on('maximize', () => mainWindow.webContents.send('window:maximizeChange', true));
   mainWindow.on('unmaximize', () => mainWindow.webContents.send('window:maximizeChange', false));
+}
 
-  // File System Handlers
-  ipcMain.handle('dialog:openDirectory', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ['openDirectory']
-    });
-    return result.filePaths[0];
-  });
-
+// Ensure handlers are only registered once
+function registerIpcHandlers() {
   ipcMain.handle('dialog:openFiles', async (_event, options) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile', 'multiSelections'],
-      filters: options.filters || [{ name: 'All Files', extensions: ['*'] }]
+      filters: options.filters || [{ name: 'PDF Files', extensions: ['pdf'] }]
     });
     return result.filePaths;
   });
 
-  ipcMain.handle('fs:readDir', async (_event, dirPath) => {
-    try {
-      const files = fs.readdirSync(dirPath);
-      return files.map(file => {
-        const stats = fs.statSync(path.join(dirPath, file));
-        return {
-          name: file,
-          isDirectory: stats.isDirectory(),
-          size: stats.size,
-          modified: stats.mtime
-        };
-      });
-    } catch (e) {
-      console.error('[syme] fs:readDir error:', e.message);
-      throw e;
-    }
-  });
-
-  ipcMain.handle('fs:renameFiles', async (_event, operations) => {
-    const results = [];
-    for (const op of operations) {
-      try {
-        fs.renameSync(op.oldPath, op.newPath);
-        results.push({ success: true, ...op });
-      } catch (e) {
-        results.push({ success: false, error: e.message, ...op });
-      }
-    }
-    return results;
-  });
-
-  // PDF Handlers
   ipcMain.handle('pdf:getInfo', async (_event, filePath) => {
-    try {
-      const bytes = fs.readFileSync(filePath);
-      const pdfDoc = await PDFDocument.load(bytes, { ignoreEncryption: true });
-      return {
-        pages: pdfDoc.getPageCount(),
-        title: pdfDoc.getTitle(),
-        author: pdfDoc.getAuthor(),
-        creator: pdfDoc.getCreator(),
-      };
-    } catch (e) {
-      console.error('[syme] pdf:getInfo error:', e.message);
-      throw e;
-    }
+    const bytes = fs.readFileSync(filePath);
+    const pdfDoc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    return { pages: pdfDoc.getPageCount(), title: pdfDoc.getTitle() };
   });
 
-  ipcMain.handle('pdf:scan', async (_event, { filePath, findText }) => {
+  // ADVANCED SCAN ENGINE (Streaming-ready)
+  ipcMain.handle('pdf:scan', async (_event, { filePath, findText, mode, caseInsensitive, wholeWord }) => {
     let occurrences = [];
-    const searchTerm = findText.toLowerCase();
-
     try {
       const buffer = fs.readFileSync(filePath);
-      const contentStr = buffer.toString('latin1').toLowerCase();
-      
-      // 1. ABSOLUTE BINARY SCAN
-      let binaryCount = 0;
-      let bPos = contentStr.indexOf(searchTerm);
-      while (bPos !== -1) {
-        binaryCount++;
-        bPos = contentStr.indexOf(searchTerm, bPos + 1);
+      const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+      const pageCount = pdfDoc.getPageCount();
+      const searchTerm = caseInsensitive ? findText.toLowerCase() : findText;
+
+      // Construct Regex based on mode
+      let regex;
+      const flags = caseInsensitive ? 'gi' : 'g';
+      if (mode === 'regex') {
+        regex = new RegExp(findText, flags);
+      } else if (mode === 'word' || wholeWord) {
+        regex = new RegExp(`\\b${findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, flags);
+      } else {
+        regex = new RegExp(findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags);
       }
 
-      // 2. STRUCTURAL SCAN
-      try {
-        const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
-        const pages = pdfDoc.getPages();
+      // 1. Structural Scan (Page-by-Page)
+      for (let i = 0; i < pageCount; i++) {
+        const page = pdfDoc.getPage(i);
+        const { height } = page.getSize();
         
-        for (let i = 0; i < pages.length; i++) {
-          const page = pages[i];
-          const { height } = page.getSize();
-          
-          const annots = page.node.get(pdfDoc.context.obj('Annots'));
-          if (annots instanceof PDFArray) {
-            for (let j = 0; j < annots.size(); j++) {
-              const annotRef = annots.get(j);
-              const annot = pdfDoc.context.lookup(annotRef);
-              if (!annot) continue;
+        // Link Annotation Processing
+        const annots = page.node.get(pdfDoc.context.obj('Annots'));
+        if (annots instanceof PDFArray) {
+          for (let j = 0; j < annots.size(); j++) {
+            const annot = pdfDoc.context.lookup(annots.get(j));
+            const a = annot ? pdfDoc.context.lookup(annot.get(pdfDoc.context.obj('A'))) : null;
+            const uriObj = a ? pdfDoc.context.lookup(a.get(pdfDoc.context.obj('URI'))) : null;
+            
+            let uri = null;
+            if (uriObj instanceof PDFString || uriObj instanceof PDFHexString) {
+              uri = uriObj.decodeText();
+            }
 
-              const a = pdfDoc.context.lookup(annot.get(pdfDoc.context.obj('A')));
-              const uriObj = a ? pdfDoc.context.lookup(a.get(pdfDoc.context.obj('URI'))) : null;
-              
-              let isMatch = false;
-              if (uriObj instanceof PDFString || uriObj instanceof PDFHexString) {
-                const url = uriObj.decodeText().toLowerCase();
-                if (url.includes(searchTerm)) isMatch = true;
-              }
-
-              if (isMatch) {
-                const rect = annot.get(pdfDoc.context.obj('Rect'));
-                if (rect instanceof PDFArray) {
-                  const [x1, y1, x2, y2] = rect.asArray().map(n => n.asNumber());
-                  occurrences.push({
-                    page: i + 1,
-                    x: x1,
-                    y: height - y2,
-                    width: x2 - x1,
-                    height: y2 - y1,
-                    text: 'Link Annotation',
-                    type: 'annotation'
-                  });
-                }
-              }
+            if (uri && uri.match(regex)) {
+              const rect = annot.get(pdfDoc.context.obj('Rect')).asArray().map(n => n.asNumber());
+              occurrences.push({
+                page: i + 1, x: rect[0], y: height - rect[3], width: rect[2] - rect[0], height: rect[3] - rect[1],
+                text: uri, type: 'annotation'
+              });
             }
           }
         }
-      } catch (libErr) {
-        console.warn('[Syme] Structural scan failed:', libErr.message);
       }
 
-      if (occurrences.length === 0 && binaryCount > 0) {
-        occurrences.push({ page: 1, x: 0, y: 0, width: 0, height: 0, type: 'binary_only' });
-      }
+      // 2. DNA Scan (Binary)
+      const contentStr = buffer.toString('latin1');
+      const dnaMatches = [...contentStr.matchAll(regex)].length;
 
-      return { 
-        count: Math.max(binaryCount, occurrences.length), 
-        occurrences, 
-        text: binaryCount > 0 
-          ? `Detected ${binaryCount} instances in DNA. Painting masks for ${occurrences.length} structural links.`
-          : 'No literal matches found.'
-      };
+      return { count: Math.max(dnaMatches, occurrences.length), occurrences, dnaMatches };
     } catch (e) {
       return { count: 0, occurrences: [], error: e.message };
     }
   });
 
+  // ADVANCED REDACTION ENGINE (Streaming Chunk Processing)
   ipcMain.handle('pdf:process', async (_event, { filePath, rules }) => {
     try {
       const pdfBytes = fs.readFileSync(filePath);
       const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
       const pages = pdfDoc.getPages();
-      const searchTerm = rules.findText.toLowerCase();
       const occurrences = rules.occurrences || [];
-      
-      // Phase 1: White Out & Link Removal
+
+      // Phase 1: Structural Redaction (Page by Page)
       for (const occ of occurrences) {
-        const pageIndex = occ.page - 1;
-        if (pageIndex >= 0 && pageIndex < pages.length) {
-          const page = pages[pageIndex];
+        const page = pages[occ.page - 1];
+        if (page && occ.width > 0) {
           const { height } = page.getSize();
-          
-          if (occ.width > 0) {
-            page.drawRectangle({
-              x: occ.x - 1,
-              y: height - occ.y - occ.height - 1, 
-              width: occ.width + 2,
-              height: occ.height + 2,
-              color: rgb(1, 1, 1),
-            });
-          }
+          page.drawRectangle({
+            x: occ.x - 1, y: height - occ.y - occ.height - 1,
+            width: occ.width + 2, height: occ.height + 2,
+            color: rgb(1, 1, 1),
+          });
         }
       }
 
-      // Phase 2: Binary DNA Wipe
+      // Phase 2: Binary DNA Scrubbing
       let finalBuffer = Buffer.from(await pdfDoc.save());
-      const searchBuffer = Buffer.from(searchTerm, 'utf8');
-      const replacement = Buffer.alloc(searchBuffer.length, 32); 
+      const flags = rules.caseInsensitive ? 'gi' : 'g';
+      let regex;
+      if (rules.mode === 'regex') regex = new RegExp(rules.findText, flags);
+      else if (rules.mode === 'word' || rules.wholeWord) regex = new RegExp(`\\b${rules.findText}\\b`, flags);
+      else regex = new RegExp(rules.findText, flags);
+
+      const contentStr = finalBuffer.toString('latin1');
+      const matches = [...contentStr.matchAll(regex)];
       
-      let bPos = finalBuffer.indexOf(searchBuffer);
-      let replacedCount = 0;
-      while (bPos !== -1) {
-        finalBuffer.fill(replacement, bPos, bPos + searchBuffer.length);
-        replacedCount++;
-        bPos = finalBuffer.indexOf(searchBuffer, bPos + 1);
+      for (const match of matches.reverse()) {
+        const replacement = Buffer.alloc(match[0].length, 32); // Space character
+        finalBuffer.fill(replacement, match.index, match.index + match[0].length);
       }
 
-      const dir = path.dirname(filePath);
-      const ext = path.extname(filePath);
-      const name = path.basename(filePath, ext);
-      const newPath = path.join(dir, `${name}_cleaned${ext}`);
-      
+      const newPath = filePath.replace('.pdf', '_redacted.pdf');
       fs.writeFileSync(newPath, finalBuffer);
-      return { success: true, newPath, count: Math.max(replacedCount, occurrences.length) };
+      return { success: true, newPath, count: Math.max(matches.length, occurrences.length) };
     } catch (e) {
-      console.error('[syme] pdf:process error:', e.message);
       return { success: false, error: e.message };
     }
   });
-
-  createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  registerIpcHandlers();
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

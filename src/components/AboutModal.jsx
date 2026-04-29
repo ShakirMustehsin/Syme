@@ -98,7 +98,10 @@ export default function AboutModal({ isOpen, onClose }) {
           </div>
 
           <div className={styles.footer}>
-            <button className={styles.footerLink}>
+            <button 
+              className={styles.footerLink}
+              onClick={() => window.electronAPI.openExternal('https://github.com/ShakirMustehsin/Syme#readme')}
+            >
               <ExternalLink size={14} /> Documentation
             </button>
           </div>

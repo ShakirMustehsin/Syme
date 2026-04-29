@@ -1,6 +1,7 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, shell } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  openExternal: (url) => shell.openExternal(url),
   // File system
   openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
   openFiles: (options) => ipcRenderer.invoke('dialog:openFiles', options || {}),
