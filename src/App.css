@@ -1,0 +1,15 @@
+/* App.css — global layout */
+
+.appBody {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  width: 100%;
+}
+
+/* On very small windows, stack sidebar above preview */
+@media (max-width: 680px) {
+  .appBody {
+    flex-direction: column;
+  }
+}

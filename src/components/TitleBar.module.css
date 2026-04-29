@@ -1,0 +1,116 @@
+.bar {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+  position: relative;
+  user-select: none;
+}
+
+/* Full-width drag region behind everything */
+.dragRegion {
+  position: absolute;
+  inset: 0;
+  -webkit-app-region: drag;
+  pointer-events: none;
+}
+
+/* Brand — sits above drag region, but is non-interactive (no buttons here) */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  pointer-events: none; /* let drag region work on brand area */
+}
+
+.logo {
+  height: 24px;
+  width: auto;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+.brandTag {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+/* Responsive: hide tagline on narrow windows */
+@media (max-width: 600px) {
+  .brandTag { display: none; }
+}
+
+/* Window control buttons */
+.rightSide {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+  z-index: 2;
+  -webkit-app-region: no-drag;
+}
+
+.themeToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--text-tertiary);
+  transition: all 0.2s;
+}
+
+.themeToggle:hover {
+  background: var(--bg-tertiary);
+  color: var(--accent);
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+/* Close button gets a red hover */
+.close:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.minimize:hover {
+  background: #fef9c3;
+  color: #a16207;
+}
+
+.maximize:hover {
+  background: #dcfce7;
+  color: #16a34a;
+}
