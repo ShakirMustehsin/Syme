@@ -1,8 +1,12 @@
 # Syme: Advanced PDF Forensic Manipulation Engine
 
-![Syme Header](https://raw.githubusercontent.com/ShakirMustehsin/Syme/main/assets/banner.png)
+<p align="center">
+  <img src="./assets/banner.png" width="100%" style="border-radius: 20px;" />
+</p>
 
-**Syme** is a professional-grade, offline-first PDF manipulation and redaction suite designed for high-precision text extraction and structural sanitization. Built for legal professionals, researchers, and developers, Syme handles everything from basic string removal to complex regex-based forensic scrubbing across documents of any scale.
+> *"Don't you see that the whole aim of Newspeak is to narrow the range of thought? In the end we shall make thought-crime literally impossible, because there will be no words in which to express it."* — **Syme, 1984**
+
+**Syme** is a professional-grade, offline-first PDF manipulation and redaction suite. Inspired by the specialist from George Orwell’s *1984*, this tool follows a singular philosophy: **Eliminate the unnecessary and preserve the essential.** It is designed for high-precision text extraction and structural sanitization across documents of any scale.
 
 ## 🚀 Key Features
 
@@ -19,13 +23,11 @@
 ### ⚡ Performance at Scale
 - **Streaming Pipeline**: Page-by-page processing architecture optimized for 1000+ page documents.
 - **Zero-Latency UI**: Background processing in the Electron Main thread keeps the interface fluid during heavy operations.
-- **Offline First**: All processing happens locally on your machine. Your data never leaves your device.
 
 ## 🛠️ Technology Stack
 - **Core**: Electron / Node.js
 - **Frontend**: React / Vite / Framer Motion
 - **Engine**: pdf-lib / Raw Binary Buffer Manipulation
-- **Styling**: Vanilla CSS (Premium Glassmorphism Design)
 
 ## 📥 Getting Started
 
@@ -53,9 +55,9 @@ To generate a standalone Windows executable (`.exe`), Syme uses `electron-builde
    ```
 2. **Package the application**:
    ```bash
-   npm run dist
+   npm run electron:build
    ```
-The executable will be generated in the `/dist` folder.
+The executable will be generated in the `/release` folder.
 
 ## 🤝 Contributing
 Contributions are welcome! Please feel free to submit a Pull Request.
